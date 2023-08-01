@@ -4,41 +4,50 @@ library(caret)
 library(randomForest)
 library(cvTools)
 library(pROC)
-setwd("C:/Users/ASUS/OneDrive/Desktop/Edvancer R/R")
+
+#create dummies function
 source("createDummies.r")
 
-setwd("C:/Users/ASUS/OneDrive/Desktop/Edvancer R/R/projectdb")
 
+#IMPORTING DATA INTO R
 store.train = read.csv("store_train.csv")
 store.test = read.csv("store_test.csv")
+
+#Adding target variable "store" in test data
+store.test$store = NA
+
+#Adding new column to differentiate between train and test data after combining
 store.test$data = "test"
 store.train$data = "train"
 
-store.test$store = NA
+#Combining train and test data
 store_all = rbind(store.train,store.test)
+
+#converting target variable into factor type
 store_all$store = as.factor(store_all$store)
 View(store_all)
 glimpse(store_all)
+
+#Finding NA values
 sum(is.na(store_all))
-attach(store_all)
+
 names(store.train)
-# table(countytownname, countyname)
-# tapply(countyname,countytownname , unique )
-# table(state_alpha
+#finding correlation
+table(countytownname, countyname)
+ tapply(countyname,countytownname , unique )
+
 
 
 #data cleaning-----------------------
+#removing least important column for prediction
 store_all = store_all %>% select(-countyname, -countytownname,-Areaname, 
                             -state_alpha, -storecode)
 
 
-store_all$population[is.na(store_all$population)]=round(median(store_all$population,na.rm=T),0)
-store_all$country[is.na(store_all$country)]=round(median(store_all$country,na.rm=T),0)
-
-
-#store_all = createDummies(store_all,"storecode", 50)
+#creating dummies
 store_all = createDummies(store_all,"store_Type", 0)
 
+#Splitting train and test data from combined data
 store.test = store_all %>% filter(data == "test") %>% select(-data,-store)
 store.train = store_all %>% filter(data =="train") %>% select(-data)
 
@@ -46,6 +55,7 @@ store.train = store_all %>% filter(data =="train") %>% select(-data)
 
 sum(is.na(store.train))
 colSums(is.na(store.train))
+#filling na values with median of particular column
 store.train$population = ifelse(is.na(store.train$population),
                                 round(mean(store.train$population,na.rm =T)),store.train$population)
 
@@ -55,8 +65,9 @@ store.test$population = ifelse(is.na(store.test$population),
 store.test$country = ifelse(is.na(store.test$country),
                                round(mean(store.test$country,na.rm =T)),store.test$country)
 sum(is.na(store.test))
-#model---------------------------------
+#linear model---------------------------------
 
+#Splitting the data set into Train75 anad train25
 set.seed(21)
 s=sample(1:nrow(store.train),0.75*nrow(store.train))
 train_75=store.train[s,] 
@@ -68,17 +79,19 @@ for_vif=lm(store~.-Id-sales0-sales2-sales3-sales1,data=train_75)
 sort(vif(for_vif),decreasing = T)[1:3]
 summary(for_vif)
 
+#Generalized linear model----------------------------------------------
 fit=glm(store~.-Id-sales0-sales2-sales3-sales1,data=train_75) #32 predictor var
 fit=step(fit)
 summary(fit)
 fit=glm(store ~ sales4 + CouSub + population + storecode_METRO12620N23019 + 
           storecode_METRO14460MM1120,data=train_75) #32 predictor var
 
-library(pROC)
+
 scoreLG=predict(fit,newdata =test_25,type = "response")
 roccurve=roc(test_25$store,scoreLG) 
 auc(roccurve)
 
+#predicting random forest model
 rf.model3= randomForest(as.factor(store)~.-Id,data=train_75)
 test.score3=predict(rf.model3,newdata=test_25,type="prob")[,2]
 auc(roc(test_25$store,test.score3))
@@ -146,43 +159,6 @@ best_param = data.frame(mtry =3,
                         ntree = 275,
                         maxnodes =250 ,
                         nodesize = 20 )
-# 
-# mtry ntree maxnodes nodesize
-#     3   150      300       20
-# [1] 0.8196232
-# mtry ntree maxnodes nodesize
-#     3   200      300       12
-# [1] 0.8206724
-
-# 
-# mtry ntree maxnodes nodesize
-#     3   500      300       20
-# [1] 0.8181867
-# mtry ntree maxnodes nodesize
-#    3   500      500        5
-# [1] 0.8151922
-
-# mtry ntree maxnodes nodesize
-#  3.741    50      300       20
-# [1] 0.8151621
-
-# mtry ntree maxnodes nodesize
-#  3.741   150      500       10
-# [1] 0.8154377
-
-# mtry ntree maxnodes nodesize
-#     3   275      250       20
-# [1] 0.8204526
-
-
-best_param = data.frame(mtry =20 ,
-                        ntree =200,
-                        maxnodes =100 ,
-                        nodesize = 10 )
-# mtry ntree maxnodes nodesize
-# 2029   35   100      100       12
-# [1] 0.8012028
-
 
 
 store.rf.final = randomForest(as.factor(store)~.-Id, data = train_75,
@@ -203,40 +179,11 @@ test.pred = ifelse(test.score > 0.5, 1, 0)
 price1 = test.pred[,2]
 
 auc_score=auc(roc(test_25$store,val.score[,2])); auc_score
-#write.csv(price1, "abac.csv", row.names = F)
-write.table(price1, "82.17store.csv", col.names = "Store", row.names = F)
-?write.csv
+
 
 score=predict(store.rf.final,newdata= store.test, type="prob")[,1]; score
-write.csv(test.pred[,1], "pred.csv", row.names = T)
-write.csv(auc_score, "store.csv")
- 
-# fit_s = glm(store~.-State-store_Type_SupermarketType1-sales3-store_Type_SupermarketType3-
-#               store_Type_GroceryStore-Id-sales4-country-sales0, 
-#             family = "binomial", data = train1_s1)
-# round(sort((summary(fit_s)$coefficients)[,4]),4)
-# 
-# 
-# val.score = predict(fit_s, newdata = train2_s2, type = "response")
-# val.pred = ifelse(val.score > 0.5, 1, 0)
-# val.pred[1:9]
-# 
-# 
-# 
-# train.score = predict(fit_s,newdata = train1_s1, type = "response")
-# train.pred = ifelse(train.score > 0.5, 1, 0)
-# train.pred[1:9]
 
-
-# for training data
-# train_pred <- ifelse(train.score > 0.5, 1, 0)
-# 
-# # for  validation data
-# 
-# val_pred <- ifelse(val.score > 0.5, 1, 0)
-
-
-# creating confusion matrix
+ #creating confusion matrix
 train_cm = confusionMatrix(factor(train.pred),
                            factor(train1_s1$store))
 
@@ -260,23 +207,4 @@ precision = TP/(TP + FP)
 recall = Sn
 
 KS = (TP/P) - (FP/N);KS
-
-mtry ntree maxnodes nodesize
-  4   500      300       15
-[1] 0.8178858
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
